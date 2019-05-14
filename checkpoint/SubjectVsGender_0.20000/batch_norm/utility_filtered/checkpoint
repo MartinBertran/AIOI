@@ -1,0 +1,2 @@
+model_checkpoint_path: "utility_filtered-1"
+all_model_checkpoint_paths: "utility_filtered-1"
