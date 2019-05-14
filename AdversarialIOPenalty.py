@@ -21,7 +21,7 @@ def computeMI(p,q):
     return dKL
 
 
-class priGAN():
+class AIOIGAN():
     def __init__(
         self, data_generator,
         utility_output, utility_loss, utility_acc, utility_solver,
