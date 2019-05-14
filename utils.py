@@ -7,6 +7,7 @@ import scipy.misc
 import numpy as np
 import copy
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 try:
     _imread = scipy.misc.imread
@@ -153,12 +154,12 @@ def save_everything(ganClass, savepath, dg, nu, ns, n_val=None, load_checkpoint=
         secret_gt_idx = data_batch[1][1]
 
         # Evaluate raw image
-        pUX_aux = sess.run(ganClass.utility_raw_output,
+        pUX_aux = ganClass.sess.run(ganClass.utility_raw_output,
                            feed_dict={ganClass.raw_input_image_ph: imgs})
 
         # Get filtered images
-        gen_imgs = sess.run(ganClass.filter_output, feed_dict={ganClass.input_image_ph: imgs})
-        pUY_aux, pSY_aux = sess.run([ganClass.utility_output, ganClass.secret_output],
+        gen_imgs = ganClass.sess.run(ganClass.filter_output, feed_dict={ganClass.input_image_ph: imgs})
+        pUY_aux, pSY_aux = ganClass.sess.run([ganClass.utility_output, ganClass.secret_output],
                                     feed_dict={ganClass.raw_input_image_ph: gen_imgs})
 
         # Predictions
@@ -203,7 +204,7 @@ def save_everything(ganClass, savepath, dg, nu, ns, n_val=None, load_checkpoint=
     plt.show()
 
 
-def pred_network(output, input_ph, pred_dim, dg, n_val=None, flag=0):
+def pred_network(output, input_ph, pred_dim, dg, n_val=None, flag=0,sess):
     #     dg.shuffle()
     if n_val is None:
         n_val = len(dg)
@@ -249,15 +250,15 @@ def pred_ganclass_network(ganClass, pred_dim, dg, filtro=True, n_val=None, flag=
         gt = data_batch[1][flag]  # utility flag = 0 // secret flag = 1
 
         if filtro:
-            gen_imgs = sess.run(ganClass.filter_output, feed_dict={ganClass.input_image_ph: imgs})
+            gen_imgs = ganClass.sess.run(ganClass.filter_output, feed_dict={ganClass.input_image_ph: imgs})
         else:
             gen_imgs = imgs
 
         if flag == 0:
-            pred = sess.run(ganClass.utility_output,
+            pred = ganClass.sess.run(ganClass.utility_output,
                             feed_dict={ganClass.raw_input_image_ph: gen_imgs})
         else:
-            pred = sess.run(ganClass.secret_output,
+            pred = ganClass.sess.run(ganClass.secret_output,
                             feed_dict={ganClass.raw_input_image_ph: gen_imgs})
 
         # storing and book-keeping
