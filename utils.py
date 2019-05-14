@@ -204,7 +204,7 @@ def save_everything(ganClass, savepath, dg, nu, ns, n_val=None, load_checkpoint=
     plt.show()
 
 
-def pred_network(output, input_ph, pred_dim, dg, n_val=None, flag=0,sess):
+def pred_network(output, input_ph, pred_dim, dg, n_val=None, flag=0,sess=None):
     #     dg.shuffle()
     if n_val is None:
         n_val = len(dg)
