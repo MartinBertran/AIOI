@@ -108,3 +108,164 @@ def combined_loss_fn(utililty,secret_prior, combined_output, budget_ph, lambda_p
     penalty_secret_loss = penalty_loss(combined_output[1], secret_prior,  budget_ph)
     L = utility_loss_term + lambda_ph*penalty_secret_loss
     return L , utility_loss_term, penalty_secret_loss
+
+
+def save_everything(ganClass, savepath, dg, nu, ns, n_val=None, load_checkpoint=True):
+    def computeDKL(p, q):
+        p = np.clip(np.array(p), 1e-7, 1)
+        q = np.clip(np.array(q), 1e-7, 1)
+        dKL = np.sum(p * np.log(p / q), axis=1)
+        return dKL
+
+    def computeMI(p, q):
+        dKL = computeDKL(p, q)
+        dKL = np.mean(dKL)
+        return dKL
+
+    ## Save Losses and MIs
+    tr_loss = ganClass.stored_filtered_train_losses[0:ganClass.nplot_val, :]
+    val_loss = ganClass.stored_filtered_val_losses[0:ganClass.nplot_val, :]
+    u_prior = ganClass.utility_prior
+    s_prior = ganClass.secret_prior
+
+    ### Load filter and classifiers ###
+    if load_checkpoint:
+        ganClass.load(ganClass.checkpoint_dir, ganClass.pretrain_checkpoint_dir,
+                      load_type='train', budget_val=ganClass.budget_val)
+
+    ### TEST ###
+    if n_val is None:
+        n_val = len(dg)
+
+    bs = dg.batch_size
+    pSY = np.zeros([n_val * bs, ns])
+    pUY = np.zeros([n_val * bs, nu])
+    pUX = np.zeros([n_val * bs, nu])
+    gtU = np.zeros([n_val * bs, nu])
+    gtS = np.zeros([n_val * bs, ns])
+
+    count = 0
+    for idx in np.arange(n_val):
+        # Get data batch
+        data_batch = dg.__getitem__(idx)
+        imgs = data_batch[0][0]
+        utility_gt_idx = data_batch[1][0]
+        secret_gt_idx = data_batch[1][1]
+
+        # Evaluate raw image
+        pUX_aux = sess.run(ganClass.utility_raw_output,
+                           feed_dict={ganClass.raw_input_image_ph: imgs})
+
+        # Get filtered images
+        gen_imgs = sess.run(ganClass.filter_output, feed_dict={ganClass.input_image_ph: imgs})
+        pUY_aux, pSY_aux = sess.run([ganClass.utility_output, ganClass.secret_output],
+                                    feed_dict={ganClass.raw_input_image_ph: gen_imgs})
+
+        # Predictions
+        pSY[count:int(count + pUY_aux.shape[0]), :] = pSY_aux
+        pUY[count:int(count + pUY_aux.shape[0]), :] = pUY_aux
+        pUX[count:int(count + pUY_aux.shape[0]), :] = pUX_aux
+        gtU[count:int(count + pUY_aux.shape[0]), :] = utility_gt_idx
+        gtS[count:int(count + pUY_aux.shape[0]), :] = secret_gt_idx
+        count += pUY_aux.shape[0]
+
+    pSY = pSY[:count, ...]
+    pUY = pUY[:count, ...]
+    pUX = pUX[:count, ...]
+    gtU = gtU[:count, ...]
+    gtS = gtS[:count, ...]
+    u_prior = u_prior[0, :]
+    s_prior = s_prior[0, :]
+
+    save_data = {}
+    save_data['tr_loss'] = tr_loss
+    save_data['val_loss'] = val_loss
+    save_data['pSY'] = pSY
+    save_data['pUY'] = pUY
+    save_data['pUX'] = pUX
+    save_data['gtU'] = gtU
+    save_data['gtS'] = gtS
+    save_data['u_prior'] = u_prior
+    save_data['s_prior'] = s_prior
+
+    print('top 5 acc filtered : ', get_categorical_performance(pUY, gtU, ntop=5))
+    print('top 5 acc original : ', get_categorical_performance(pUX, gtU, ntop=5))
+    print('acc gender : ', get_categorical_performance(pSY, gtS, ntop=1))
+
+    import pickle
+    with open(savepath, 'wb') as f:
+        pickle.dump(save_data, f)
+    return
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(tr_loss[:, 0])
+    plt.plot(val_loss[:, 0])
+    plt.show()
+
+
+def pred_network(output, input_ph, pred_dim, dg, n_val=None, flag=0):
+    #     dg.shuffle()
+    if n_val is None:
+        n_val = len(dg)
+    bs = dg.batch_size
+
+    prediction = np.zeros([n_val * bs, pred_dim])
+    gt_labels = np.zeros([n_val * bs, pred_dim])
+    count = 0
+    for idx in np.arange(n_val):
+        # get data batch
+        data_batch = dg.__getitem__(idx)
+        imgs = data_batch[0][0]
+        gt = data_batch[1][flag]  # utility flag = 0 // secret flag = 1
+
+        # Get filtered images
+        feed_dict = {input_ph: imgs}
+        pred = sess.run(output, feed_dict=feed_dict)
+
+        # storing and book-keeping
+        # classifier losses [u,ur,s]
+        prediction[count:int(count + pred.shape[0]), :] = pred
+        gt_labels[count:int(count + pred.shape[0]), :] = gt
+        count += pred.shape[0]
+    prediction = prediction[:count, ...]
+    gt_labels = gt_labels[:count, ...]
+
+    return prediction, gt_labels
+
+
+def pred_ganclass_network(ganClass, pred_dim, dg, filtro=True, n_val=None, flag=0):
+    # dg.shuffle()
+    if n_val is None:
+        n_val = len(dg)
+    bs = dg.batch_size
+
+    prediction = np.zeros([n_val * bs, pred_dim])
+    gt_labels = np.zeros([n_val * bs, pred_dim])
+    count = 0
+    for idx in np.arange(n_val):
+        # get data batch
+        data_batch = dg.__getitem__(idx)
+        imgs = data_batch[0][0]
+        gt = data_batch[1][flag]  # utility flag = 0 // secret flag = 1
+
+        if filtro:
+            gen_imgs = sess.run(ganClass.filter_output, feed_dict={ganClass.input_image_ph: imgs})
+        else:
+            gen_imgs = imgs
+
+        if flag == 0:
+            pred = sess.run(ganClass.utility_output,
+                            feed_dict={ganClass.raw_input_image_ph: gen_imgs})
+        else:
+            pred = sess.run(ganClass.secret_output,
+                            feed_dict={ganClass.raw_input_image_ph: gen_imgs})
+
+        # storing and book-keeping
+        # classifier losses [u,ur,s]
+        prediction[count:int(count + pred.shape[0]), :] = pred
+        gt_labels[count:int(count + pred.shape[0]), :] = gt
+        count += pred.shape[0]
+    prediction = prediction[:count, ...]
+    gt_labels = gt_labels[:count, ...]
+
+    return prediction, gt_labels
